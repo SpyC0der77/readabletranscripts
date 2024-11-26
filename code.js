@@ -1,10 +1,10 @@
 import { marked } from "https://esm.run/marked";
 
-// Shuttle AI API Integration with GitHub Secret
-const API_KEY = process.env.API_KEY; // Using GitHub Secret injected as an environment variable
+// Fetch API Key from meta tag
+const API_KEY = document.querySelector('meta[name="api-key"]').content;
 
 if (!API_KEY) {
-  throw new Error("API_KEY is not defined. Please ensure it's set as a GitHub secret.");
+  throw new Error("API_KEY is not defined. Please ensure it's set in the meta tag.");
 }
 
 // Shuttle AI API helper object
@@ -45,104 +45,45 @@ function chunkText(text, maxWords = 4000) {
   return chunks;
 }
 
-// Function to punctuate text using Shuttle AI
-async function punctuateText(text, vocab = "", lang = "en") {
-  const prompt = `
-    - Fix the grammar and typos of the given text.
-    - Do not rephrase: keep the original wording but fix errors.
-    - Write in ${lang}.
-    - Use this vocabulary context: "${vocab}".
-    - Text to process:
-    """${text}"""
-  `;
-  try {
-    return await shuttleAPI.generateContent(prompt);
-  } catch (error) {
-    console.error("Shuttle AI Error:", error);
-    return text;
-  }
-}
-
-// Function to summarize text using Shuttle AI
-async function summarizeText(text, vocab = "", lang = "en") {
-  const prompt = `
-    - Summarize the following text concisely.
-    - Use this vocabulary for context: "${vocab}".
-    - Write the summary in ${lang}.
-    - Text to summarize:
-    """${text}"""
-  `;
-  try {
-    return await shuttleAPI.generateContent(prompt);
-  } catch (error) {
-    console.error("Shuttle AI Error:", error);
-    return "Error generating summary.";
-  }
-}
-
-// Function to prepare vocabulary
-async function createVocabulary(videoId, description = "", lang = "en") {
-  const prompt = `
-    - Extract important words and names from the following description.
-    - Return a simple list separated by commas.
-    - Description:
-    """${description}"""
-  `;
-  try {
-    return await shuttleAPI.generateContent(prompt);
-  } catch (error) {
-    console.error("Shuttle AI Error:", error);
-    return "";
-  }
-}
-
-// Main function to process transcript
-async function processTranscript(videoId, transcript, languageCode, vocab) {
+// Function to process transcript using Shuttle AI
+async function processTranscript(transcript, lang = "en") {
   const chunkedText = chunkText(transcript);
-  let punctuatedChunks = [];
+  let processedChunks = [];
 
   for (const chunk of chunkedText) {
-    const processed = await punctuateText(chunk, vocab, languageCode);
-    punctuatedChunks.push(processed);
+    const prompt = `
+      - Fix grammar and typos in the following text.
+      - Write in ${lang}.
+      - Text to process: """${chunk}"""
+    `;
+    const result = await shuttleAPI.generateContent(prompt);
+    processedChunks.push(result);
   }
 
-  const fullText = punctuatedChunks.join("\n");
-  const summary = await summarizeText(fullText, vocab, languageCode);
-
-  // Render the processed content
-  punctuated.innerHTML = `<p>${marked(fullText)}</p>`;
-  summaryDiv.innerHTML = `<p>${marked(summary)}</p>`;
+  return processedChunks.join("\n");
 }
 
-// Fetch local video data
-async function getLocal(videoId, languageCode = "en") {
-  // Replace with your logic to fetch video details and transcript
-  const response = await fetch(`/api/video?videoId=${videoId}&language=${languageCode}`);
-  if (!response.ok) {
-    return { error: "Failed to fetch video data." };
-  }
-  return await response.json();
-}
+// Function to handle the API call and render results
+async function handleTranscript(videoId, transcript, lang = "en") {
+  try {
+    const processedTranscript = await processTranscript(transcript, lang);
+    const summaryPrompt = `
+      - Summarize the following transcript.
+      - Write the summary in ${lang}.
+      - Transcript: """${processedTranscript}"""
+    `;
+    const summary = await shuttleAPI.generateContent(summaryPrompt);
 
-// Error display
-function showError(msg) {
-  summary.textContent = "";
-  punctuated.textContent = msg;
-}
-
-// Event Listener for video processing
-if (videoid) {
-  vtitle.innerHTML = `<div>Loading video details...</div>`;
-  punctuated.innerHTML = `<p>Processing transcript...</p>`;
-  summary.innerHTML = `<p>Summarizing...</p>`;
-
-  // Fetch video details and process transcript
-  const videoData = await getLocal(videoid, languageCode);
-  if (videoData.error) {
-    showError("Error fetching video data.");
-  } else {
-    const transcript = videoData[languageCode].chunks.map((c) => c.text).join(" ");
-    const vocab = await createVocabulary(videoid, videoData.description, languageCode);
-    await processTranscript(videoid, transcript, languageCode, vocab);
+    // Render results
+    document.getElementById("punctuated").innerHTML = `<p>${marked(processedTranscript)}</p>`;
+    document.getElementById("summary").innerHTML = `<p>${marked(summary)}</p>`;
+  } catch (error) {
+    console.error("Error processing transcript:", error);
+    document.getElementById("punctuated").innerHTML = "<p>Error processing transcript.</p>";
   }
 }
+
+// Example usage
+const exampleTranscript = "this is an example transcript to process.";
+const videoId = "example_video_id"; // Replace with actual video ID
+handleTranscript(videoId, exampleTranscript, "en");
